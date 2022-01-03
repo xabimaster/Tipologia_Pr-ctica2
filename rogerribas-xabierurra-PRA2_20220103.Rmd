@@ -1,0 +1,627 @@
+---
+title: "Pràctica 2 - Neteja i anàlisi de les dades"
+subtitle: "M2.951 - Tipologia i cicle de vida de les dades"
+author: "Roger Ribas Gimeno i Xabier Urra Nuin"
+date: "Desembre 2021"
+output:
+  html_document:
+    highlight: default
+    number_sections: no
+    theme: cosmo
+    toc: yes
+    toc_depth: 3
+  word_document: default
+  pdf_document:
+    highlight: zenburn
+    toc: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+******
+# 1. Introducció i descripció del dataset
+******
+
+El conjunt de dades healthcare-dataset-stroke-data.csv l'hem extret de la plataforma Kaggle a través del següent enllaç: https://www.kaggle.com/fedesoriano/stroke-prediction-dataset. D'acord amb l'Organització Mundial de la Salut (OMS), l'ictus o stroke en anglès és la segona causa principal de defuncions a nivell global, responsable d'aproximadament un 11% de les morts totals.
+
+Aquest conjunt de dades s'utilitza per predir si un pacient té probabilitats de sofrir un ictus, basant-se en paràmetres d'entrada com el sexe, l'edat, altres malalties, i si la persona és fumadora o no, entre d'altres. Cada fila o observació del conjunt de dades proporciona informació rellevant sobre el pacient. El conjunt de dades conté 5110 observacions i 12 variables.
+
+Les variables del conjunt de dades i que s’usaran en aquesta activitat són:
+
+* id: identificador únic
+* gender: "Male", "Female" o "Other"
+* age: edat del pacient
+* hypertension: 0 si el pacient no té hipertensió, 1 si el pacient té hipertensió
+* heart_disease: 0 si el pacient no té cap malaltia cardiovascular, 1 si el pacient té alguna malaltia cardiovascular
+* ever_married: "No" si el pacient no ha estat casat, "Yes" si el pacient ha estat casat
+* work_type: "children" si el pacient és un infant, "Govt_jov" si el pacient és funcionari del govern, "Never_worked" si el pacient no ha treballat mai, "Private" si treballa en l'empresa privada, o "Self-employed" si el pacient és un treballador autònom.
+* Residence_type: "Rural" si el pacient viu en una zona rural, o "Urban" si el pacient viu en una zona urbana
+* avg_glucose_level: nivell mitjà de glucosa en sang del pacient
+* bmi: índex de massa corporal del pacient
+* smoking_status: "formerly smoked" si el pacient havia fumat però ja no ho fa, "never smoked" si el pacient mai no ha fumat, "smokes" si el pacient fuma actualment, o "Unknown" si no es tenen dades.
+* stroke: 1 si el pacient ja ha patit ictus o 0 si no l'ha patit.
+
+******
+# 2. Integració i selecció de les dades
+******
+
+A continuació llegim el fitxer healthcare-dataset-stroke-data.csv i guardem les dades en un objecte amb identificador denominat stroke_dataset. Seguidament, verificarem que les dades s’han carregat correctament.
+
+```{r message= FALSE, warning=FALSE}
+
+# Carreguem el dataset tenint en compte que ja disposa d'una capçalera amb els noms dels atributs, i que els caràcters separadors són comes
+stroke <- read.csv("healthcare-dataset-stroke-data.csv",header = TRUE,sep = ",")
+attach(stroke)
+
+# Guardem una còpia del dataset original
+copiastroke <- stroke
+
+# Vegem com és el dataset revisant-ne les primeres 10 files
+head(stroke,10)
+
+# Ara comprovem l’estructura del joc de dades:
+str(stroke)
+
+# Com observem al resultat, comprovem que tenim 5110 observacions o files i 12 variables o columnes. Vegem ara el resum del dataset:
+summary(stroke)
+
+```
+
+******
+# 3. Neteja i preparació de les dades
+******
+
+## Tractament general de les dades
+
+Observant la natura de les dades amb què tractem, veiem que tenim una variable objectiu (stroke), binària, i la resta són variables predictores. D'aquestes, haurem de transformar algunes d'elles. Per exemple haurem de convertir en factor variables com heart_disease o hypertension, i convertir a tipus numèric la variable bmi, la qual està emmagatzemada com a a factor.
+
+```{r message= FALSE, warning=FALSE}
+
+# Transformem la variable bmi a numèric com hem comentat abans, i els seus valors NA els tractarem en el següent apartat
+
+str(stroke$bmi)
+stroke$bmi <- as.numeric(as.character(stroke$bmi))
+str(stroke$bmi)
+
+```
+
+```{r message= FALSE, warning=FALSE}
+
+# Transformem les variables heart_disease i hypertension a factorial com hem comentat abans
+
+stroke$heart_disease <- factor(stroke$heart_disease, levels = c(0,1), labels =c('No','Yes'))
+stroke$hypertension <- factor(stroke$hypertension,levels = c(0,1), labels = c('No','Yes'))
+str(stroke$heart_disease)
+str(stroke$hypertension)
+head(stroke,4)
+
+```
+
+## Valors absents
+
+Depenent del conjunt de dades amb què tractem, s'utilitzen uns o altres mètodes per indicar els valors absents. Hi ha datasets en els quals aquests valors són representats per zeros, per interrogants, o també pot ser que hi hagi camps que continguin elements buits. Com comprovem a continuació, no és el cas ja que no trobem elements buits en cap de les columnes del nostre conjunt de dades.
+
+```{r message= FALSE, warning=FALSE}
+
+library(dplyr)
+
+sapply(stroke, function(x) sum(is.na(x)))
+
+```
+
+Amb una ullada ràpida al fitxer de dades, observem que hi ha observacions amb la categoria "N/A" en la variable ‘bmi', referent a l'índex de massa corporal. Comprovarem la proporció d’observacions que tenen valors absents i treurem conclusions sobre què hem de fer amb aquestes dades, si eliminarles o bé si podem aplicar algun mètode d'imputació de valors.
+
+```{r message= FALSE, warning=FALSE}
+
+nrow(filter(stroke, is.na(bmi)))
+
+```
+
+Veiem que tenim 201 observacions amb valors absents a la columna 'bmi'. Decidim que el fet d'esborrar aquestes observacions que contenen aquestes categories "N/A" ens faria perdre informació rellevant, i per tant és millor emprar un mètode d'imputació de valors, com ara la mitjana dels valors numèrics, excloent els NA, de la columna d'índex de massa corporal.
+Per poder fer això, substituirem aquests NA pel valor de la mitjana comentat abans i finalment comprovarem que, un cop aplicada aquesta tècnica d'imputació, no queda cap valor NA en el dataset.
+
+```{r message= FALSE, warning=FALSE}
+
+stroke$bmi[is.na(stroke$bmi)] <- mean (as.numeric(stroke$bmi),na.rm=TRUE )
+sapply(stroke, function(x) sum(is.na(x)))
+
+```
+
+## Valors extrems
+
+Els valos extrems, també anomenats valors atípics o outliers, són observacions que es troben a una distància força allunyada de la majoria de les altres observacions en una mateixa població de dades.
+
+Per identificar-ne, si n'hi ha, utilitzarem gràfiques de tipus boxplot, les quals detecten outliers com tots aquells valors més enllà dels anomenats bigotis. Aquests són les línies que es determinen com el tercer quartil + 1.5 vegades el rang interquartílic (tercer quartil menys el primer quartil) i el primer quartil - 1.5 vegades el rang interquartílic. Analitzem els valors extrems en les variables numèriques:
+
+```{r message= FALSE, warning=FALSE}
+
+primer_plot <- boxplot(stroke$age, 
+        main = "Edat (age)",
+        boxwex = 0.5,col="light blue")
+
+segon_plot <- boxplot(stroke$avg_glucose_level, 
+        main = "Nivell mitjà de glucosa (avg_glucose_level)",
+        boxwex = 0.5,col="pink")
+
+tercer_plot <- boxplot(as.numeric(stroke$bmi), 
+        main = "Índex de massa corporal (bmi)",
+        boxwex = 0.5,col="light green")
+
+```
+
+Veiem com la variable Edat no presenta outliers, mentre que les altres dues variables sí que en tenen, com ja anticipàvem en els histogrames anteriors. No obstant, decidim que no els eliminarem ni els tractarem perquè es tracta de valors biològicament plausibles que a més a méspoden contenir informació molt important per identificar els casos amb ictus.
+
+Pel que fa a la variable sobre fumadors/no-fumadors:
+
+```{r message= FALSE, warning=FALSE}
+
+unique(stroke$smoking_status)
+nrow(filter(stroke, smoking_status=="formerly smoked"))
+nrow(filter(stroke, smoking_status=="never smoked"))
+nrow(filter(stroke, smoking_status=="smokes"))
+nrow(filter(stroke, smoking_status=="Unknown"))
+
+```
+
+Veiem que hi ha un percentatge molt alt d'observacions en la categoria "Unknown", és a dir que se'n desconeix l'status de fumador o no fumador. Però com que es tracta de 1544 observacions (aprox. 30%), no les eliminarem, ho deixarem tal com està.
+
+Per acabar aquest apartat de valors extrems, ens fixem en la variable de gènere:
+
+```{r message= FALSE, warning=FALSE}
+
+unique(stroke$gender)
+nrow(filter(stroke, gender=="Male"))
+nrow(filter(stroke, gender=="Female"))
+nrow(filter(stroke, gender=="Other"))
+
+```
+
+Veiem que hi ha una categoria de "Other", que podria fer referència a un gènere no binari, però en aquest cas, com que només es disposa d'una observació sota aquest gènere, podem determinar que es tracta d'un outlier, i decidim eliminar la fila.
+
+```{r message= FALSE, warning=FALSE}
+
+stroke <- stroke[-which(stroke$gender=='Other'),]
+dim(stroke)
+
+```
+
+## Normalitat: realitzem una inspecció visual de normalitat de les variables quantitatives
+
+```{r}
+par(mfrow=c(1,2))
+boxplot(stroke$age, main="age")
+hist(stroke$age, main="age")
+```
+
+
+```{r}
+par(mfrow=c(1,2))
+boxplot(stroke$bmi, main="bmi")
+hist(stroke$bmi, main="bmi")
+```
+
+```{r}
+par(mfrow=c(1,2))
+boxplot(stroke$avg_glucose_level, main="avg_glucose_level")
+hist(stroke$avg_glucose_level, main="avg_glucose_level")
+```
+
+Els resultats del diagrama de caixes i de l'histograma suggereixen que les variables *bmi* i *avg_glucose_level* no tenen una distribució normal, sinó una marcada asimetria positiva. 
+
+Provem de corregir-ho amb una transformació logarítmica i mostrem els resultats:
+
+```{r}
+stroke$log_bmi=log(stroke$bmi)
+stroke$log_glu=log(stroke$avg_glucose_level)
+```
+
+```{r}
+par(mfrow=c(1,2))
+boxplot(stroke$log_bmi, main="log_bmi")
+hist(stroke$log_bmi, main="log_bmi")
+```
+
+```{r}
+par(mfrow=c(1,2))
+boxplot(stroke$log_glu, main="log glucose")
+hist(stroke$log_glu, main="log glucose")
+```
+
+La transformació logarítmica ha resolt parcialment l'asimetria, especialment per la variable *bmi*. 
+
+Completem l'anàlisi de normalitat amb el contrast de normalitat de Lilliefors:
+
+```{r}
+# Carreguem la llibreria nortest:
+if (!require('nortest')) install.packages('nortest'); library(nortest)
+
+# Executem el nest de normalitat:
+lillie.test(stroke$age)
+lillie.test(stroke$log_bmi)
+lillie.test(stroke$log_glu)
+```
+
+El resultat altament significatiu ens confirma que cap d'aquestes variables no segueix una distribució normal. Malgrat això, serà un problema menor considerant la gran mida del joc de dades.  
+
+
+******
+# 4. Anàlisi de les dades
+******
+
+## Anàlisi exploratòria
+
+Primer de tot procedim a efectuar una anàlisi exploratòria de les dades. Ens desfem de la columna id ja que no ens aportarà res per a aquest anàlisi exploratori.
+
+```{r message= FALSE, warning=FALSE}
+
+#install.packages("GGally")
+#install.packages("mice")
+#install.packages("ROSE")
+library(ggplot2)
+library(caret)
+library(mice)
+library(GGally)
+library(dplyr)
+library(ROSE)
+library(randomForest)
+library(e1071)
+
+stroke<-stroke[2:14]
+stroke$stroke <- as.character(stroke$stroke)
+stroke$stroke <- gsub('1', 'Yes', stroke$stroke)
+stroke$stroke <- gsub('0', 'No', stroke$stroke)
+
+
+```
+
+Amb això, ens diposem a analitzar la relació de diverses variables amb la variable stroke.
+
+Primer de tot ho fem amb les variables categòriques: 
+
+```{r message= FALSE, warning=FALSE}
+
+g1<-ggplot(stroke, aes(x = work_type, fill = stroke))+
+  geom_bar(position = "fill")+
+  stat_count(geom = "text",
+             aes(label = stat(count)),
+             #position = "fill", color = "black"
+             position = position_fill(vjust = 0.5), color = "black")
+g1
+
+```
+
+```{r message= FALSE, warning=FALSE}
+
+g2<-ggplot(stroke, aes(x = stroke, fill = ever_married))+
+  geom_bar(position = "fill")+
+  stat_count(geom = "text",
+             aes(label = stat(count)),
+             #position = "fill", color = "black"
+             position = position_fill(vjust = 0.5), color = "black")
+g2
+
+```
+
+```{r message= FALSE, warning=FALSE}
+
+g3<-ggplot(stroke, aes(x = stroke, fill = gender))+
+  geom_bar(position = "fill")+
+  stat_count(geom = "text",
+             aes(label = stat(count)),
+             #position = "fill", color = "black"
+             position = position_fill(vjust = 0.5), color = "black")
+g3
+
+```
+
+```{r message= FALSE, warning=FALSE}
+
+g4<-ggplot(stroke, aes(x = stroke, fill = hypertension))+
+  geom_bar(position = "fill")+
+  stat_count(geom = "text",
+             aes(label = stat(count)),
+             #position = "fill", color = "black"
+             position = position_fill(vjust = 0.5), color = "black")
+g4
+
+```
+
+```{r message= FALSE, warning=FALSE}
+
+g5<-ggplot(stroke, aes(x = stroke, fill = heart_disease))+
+  geom_bar(position = "fill")+
+  stat_count(geom = "text",
+             aes(label = stat(count)),
+             #position = "fill", color = "black"
+             position = position_fill(vjust = 0.5), color = "black")
+g5
+
+```
+
+```{r message= FALSE, warning=FALSE}
+
+g6<-ggplot(stroke, aes(x = stroke, fill = Residence_type))+
+  geom_bar(position = "fill")+
+  stat_count(geom = "text",
+             aes(label = stat(count)),
+             #position = "fill", color = "black"
+             position = position_fill(vjust = 0.5), color = "black")
+g6
+
+```
+
+```{r message= FALSE, warning=FALSE}
+
+g7<-ggplot(stroke, aes(x = stroke, fill = smoking_status))+
+  geom_bar(position = "fill")+
+  stat_count(geom = "text",
+             aes(label = stat(count)),
+             #position = "fill", color = "black"
+             position = position_fill(vjust = 0.5), color = "black")
+g7
+
+```
+
+Veiem que les prinipals diferències de proporció d'ictus es troben als atributs *ever_married*, *hypertension* i *heart_disease*. 
+
+Explorem a continuació les variables quantitatives:
+
+```{r message= FALSE, warning=FALSE}
+
+g8<-ggplot(data = stroke, aes(x = stroke, y = age, fill = stroke))+geom_boxplot()
+g8
+
+```
+
+```{r message= FALSE, warning=FALSE}
+
+g9<-ggplot(data = stroke, aes(x = stroke, y = log_bmi, fill = stroke))+geom_boxplot()
+g9
+
+```
+
+
+```{r message= FALSE, warning=FALSE}
+
+g10<-ggplot(data = stroke, aes(x = stroke, y = log_glu, fill = stroke))+geom_boxplot()
+g10
+
+```
+
+Veiem que la diferència més significativa es dona per l'atribut *age*, sent els pacients que desenvolupen un ictus molt més grans que els que no el desenvolupen. També sembla haver-hi certa diferència en les xifres mitges de glucosa. 
+
+Donada la gran diferència d'edat entre pacients amb i sense ictus, explorem si poden haver-hi diferències d'edat en les variables categòriques que semblen associar-se al risk d'ictus (*hipertensió*, *ever_married* i *heart_disease*):
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+g11<-ggplot(data = stroke, aes(x = ever_married, y = age, fill = ever_married))+geom_boxplot()
+g11
+```
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+g12<-ggplot(data = stroke, aes(x = hypertension, y = age, fill = hypertension))+geom_boxplot()
+g12
+```
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+g13<-ggplot(data = stroke, aes(x = heart_disease, y = age, fill = heart_disease))+geom_boxplot()
+g13
+```
+
+Efectivament, veiem que totes aquestes variables s'asocien a una major edat. 
+
+Finalment calculem la matriu de correlacions entre variables numèriques:
+
+```{r echo=TRUE, message=FALSE, warning=FALSE}
+stroke_num <- select(stroke, "age", "log_bmi", "log_glu")
+res <- cor(stroke_num)
+round(res, 2)
+```
+
+Hi ha una correlació moderada entre l'edat i el bmi, motiu pel qual podria ser preferible no incloure ambdues variables als models de regressió que farem a continuació. 
+
+
+## Split en conjunt d'entrenament i test
+
+Abans d'iniciar el modelatge, separem el dataset en conjunt d'entrenament i conjunt de test. Dividirem el conjunt de dades en un conjunt d'entrenament (3/4) i un conjunt de test (1/4). Seleccionem el conjunt de dades de la variable classificadora i el de la resta de variables:
+
+```{r}
+# Desarem el joc de dades com un arxiu format csv:
+write.csv(stroke,'joc_analitzat.csv')
+
+# Seleccionem les variables dependent i independents:
+set.seed(666)
+y <- stroke[,"stroke"] 
+X <- stroke[,!names(stroke) %in% c("stroke", "bmi", "avg_glucose_level")] 
+```
+
+Creem un rang utilitzant el paràmetre *split_prop* (en aquest cas = 4):
+
+```{r}
+split_prop <- 4 
+indexes = sample(1:nrow(stroke), size=floor(((split_prop-1)/split_prop)*nrow(stroke)))
+trainX<-X[indexes,]
+trainy<-y[indexes]
+testX<-X[-indexes,]
+testy<-y[-indexes]
+```
+
+Fem una anàlisi de dades mínim per a assegurar-nos de no obtenir classificadors esbiaixats pels valors que conté cada mostra. Verificarem que la proporció de valors "Yes" i "No" de *stroke* és semblant en els dos conjunts:
+
+```{r}
+summary(trainy)
+summary(testy)
+```
+
+Un cop confirmat que la proporció de valors és semblant, explorem també que no hi hagi diferències significatives a les variables independents:
+
+```{r}
+summary(trainX);
+summary(testX)
+```
+
+
+## Modelatge amb Regressió Logística
+
+Utilitzarem un model de regressió logística per dur a terme la classificació, atès que la variable objectiu (*stroke*) és categòrica binària i les variables predictores contenen valors tant categòrics com numèrics. Com que els models de regressió logística s’avaluen amb el criteri d’informació d’Akaike (AIC), compararem amb aquest fins a 4 models diferents creats amb els següents criteris:
+
+1- Model més senzill que només inclou la variable edat, que sembla tan important a l'anàlisi exploratòria de les dades:
+
+```{r}
+trainy = as.factor(trainy)
+mrlog1 <- glm(trainy ~ age, data = trainX, family = binomial)
+summary(mrlog1)
+```
+2- Model que inclou també les xifres de glucosa perquè també semblen estar associades amb el resultat i no eren correlacionades amb l'edat:
+
+```{r}
+# Logistics Regression
+mrlog2 <- glm(trainy ~ age + log_glu, data = trainX, family = binomial)
+summary(mrlog2)
+```
+3- Model que inclou totes les variables categòriques i quantitatives que semblen estar associades a l'ictus a la inspecció de les dades:
+
+```{r}
+# Logistics Regression
+mrlog3 <- glm(trainy ~ age + log_glu + ever_married + hypertension + heart_disease, data = trainX, family = binomial)
+summary(mrlog3)
+```
+
+4- Model que inclou totes les variables:
+
+```{r}
+# Logistics Regression
+mrlog4 <- glm(trainy ~ age + log_glu + ever_married + hypertension + heart_disease + log_bmi + smoking_status + Residence_type + gender + work_type, data = trainX, family = binomial)
+summary(mrlog4)
+```
+
+Veiem que els millors models semblen el primer i l'últim. Comprovarem ara la seva precisió al conjunt de dades de test:
+
+
+```{r}
+glm.probs <- predict (mrlog1, newdata = testX, type = "response")
+glm.pred <- ifelse(glm.probs > 0.5, "Yes", "No")
+table(glm.pred, testy)
+```
+
+```{r}
+mean(glm.pred == testy)
+```
+
+El model 1 encerta el 94,8% dels casos, amb la limitació de que només prediu "no ictus", és a dir, erra en tots els casos d'ictus. 
+
+```{r}
+glm.probs2 <- predict (mrlog4, newdata = testX, type = "response")
+glm.pred2 <- ifelse(glm.probs2 > 0.5, "Yes", "No")
+table(glm.pred2, testy)
+```
+
+```{r}
+mean(glm.pred2 == testy)
+```
+
+Veiem que el model 4 té exactament la mateixa precisió. 
+
+Per aquest motiu, té sentit escollir el model més senzill. Calculem ara l'associació entre edat i ictus en terme d'Odds Ratio:
+
+```{r}
+# Logistics Regression
+testy = as.factor(testy)
+mrlog5 <- glm(testy ~ age, data = testX, family = binomial)
+
+exp(coefficients(mrlog5))
+```
+
+Per cada any addicional el risk d'ictus s'incrementa en un 7%. 
+
+
+## Modelatge amb Arbres de decisió:
+
+Donada l'important limitació de manca de sensibilitat del model anterior, comprovarem la utilitat d'un arbre de decisió. 
+
+Creem l'arbre de decisió usant les dades d'entrenament:
+
+```{r}
+trainy = as.factor(trainy)
+model <- C50::C5.0(trainX, trainy)
+summary(model)
+```
+
+L'arbre obtingut classifica erròniament 3648 dels 3831 casos donats, una taxa d'error del 4,8%.
+
+A continuació, procedim a mostrar l'arbre obtingut.
+
+```{r}
+model <- C50::C5.0(trainX, trainy)
+plot(model)
+```
+
+Novament, sembla que aquest model adjudica a tots els casos la classe "no ictus", motiu pel qual erra en els casos positius. 
+
+Validem el model amb les dades reservades (test): 
+
+```{r}
+predicted_model <- predict( model, testX, type="class" )
+print(sprintf("La precissió de l'arbre és: %.4f %%",100*sum(predicted_model == testy) / length(predicted_model)))
+```
+
+Analitzem la qualitat de la predicció mitjançant una matriu de confusió que ens facilitarà la interpretació de la sensibilitat i especificitat de les prediccions:
+
+```{r}
+if (!require('gmodels')) install.packages('gmodels'); library(gmodels)
+CrossTable(testy, predicted_model,prop.chisq  = FALSE, prop.c = FALSE, prop.r =FALSE,dnn = c('Reality', 'Prediction'))
+```
+
+A les dades de test, sembla que la precisió és força alta, semblant a la de les dades d'entrenament. Malgrat això, novament, a la matriu de confusió veiem que donat que el resultat "no ictus" és més freqüent, els errors del model són falsos negatius, és a dir, el model prediu que no tindran ictus pacients que si que el pateixen. Això és novament una limitació important per l'eina que estem cercant. 
+
+Per tant, explorarem finalment si és possible minimitzar aquest error. Per fer el model més sensible, jugarem amb el paràmetre cost del mètode C5.0 [1,2]. Especificarem quins errors s'han d'evitar, i per això creem una matriu de costos, a la qual indiquem que els falsos negatius ponderen 100 vegades més que els falsos positius: 
+
+```{r}
+matrix_dimensions <- list(c("Yes", "No"), c("Yes", "No"))
+names(matrix_dimensions) <- c("reference", "prediction")
+error_cost100 <- matrix(c(0, 1, 100, 0), nrow = 2, dimnames = matrix_dimensions)
+error_cost100
+```
+
+Creem el model mantenint la resta de paràmetres:
+
+```{r}
+if (!require('modeldata')) install.packages('modeldata'); library(modeldata)
+if (!require('C50')) install.packages('C50'); library(C50)
+model2 <- C50::C5.0(trainX, trainy, control = C5.0Control(), trials = 10, costs = error_cost100)
+summary(model2)
+```
+
+Veiem com són les prediccions del model 2:
+
+```{r}
+predicted_model2 <- predict( model2, testX, type="class" )
+print(sprintf("La precissió de l'arbre és: %.4f %%",100*sum(predicted_model2 == testy) / length(predicted_model2)))
+```
+
+
+```{r}
+CrossTable(testy, predicted_model2,prop.chisq  = FALSE, prop.c = FALSE, prop.r =FALSE,dnn = c('Reality', 'Prediction'))
+```
+
+Veiem que malgrat aquest intent de millorar la sensibilitat de l'arbre, els resultats són idèntics i no hem pogut millorar la precisió, específicament la capacitat de predir ictus. 
+
+
+******
+# 5. Conclusions
+******
+
+En aquesta pràctica hem treballat amb un joc de dades obtingut a la web Kaggle de pacients amb ictus i sense ictus amb la intenció final de trobar models que puguin predir quins subjectes patiran un ictus, estudiant diversos atributs basals demogràfics, socioeconòmics i biològics. 
+
+Després de la neteja de dades, hem fet una avaluació visual de les mateixes, observant certes associacions amb el risc d'ictus. L'associació més robusta es veu amb l'edat dels subjectes, i és possible que les associacions amb altres variables puguin estar confoses per diferències d'edat. 
+
+Finalment, hem intentat construir models de classificació que puguin predir el risc d'ictus. Hem creat models de regressió logística i arbres de decisió que en tots els casos han obtingut una precisió alta però amb una sensibilitat nul·la per l'ictus, segurament degut a un important inbalanç en la distribució de casos (ictus) i controls. Es podria plantejar treballar amb un subconjunt del joc de dades en què la proporció d'ictus i controls fos semblant, encara que aquest exercici tindria la limitació de no reflectir bé la distribució real de casos i controls. 
+
+******
+# Bibliografia
+******
+
+[1] Package 'C50' [en línia]. [Data de consulta: 22 de desembre de 2021]. Disponible a: https://cran.r-project.org/web/packages/C50/C50.pdf
+
+[2] David García Sabaté. Arboles de decisión C5.0 [en línia]. [Data de consulta: 22 de desembre de 2021]. Disponible a: https://rpubs.com/DavidGS/c50
